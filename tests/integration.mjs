@@ -1,0 +1,31 @@
+import assert from 'node:assert/strict';
+const origin=process.env.TEST_ORIGIN||'http://127.0.0.1:5173';
+if(!['127.0.0.1','localhost'].includes(new URL(origin).hostname))throw Error('Integration tests must only run against a disposable local database.');
+const token=process.env.TEST_ADMIN_TOKEN;
+if(!token)throw Error('Set TEST_ADMIN_TOKEN to the local test credential.');
+async function read(){const r=await fetch(origin+'/api/store?admin=1',{headers:{authorization:'Bearer '+token}});assert.equal(r.status,200);return r.json();}
+async function post(b,auth=true){const r=await fetch(origin+'/api/store',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',...(auth?{Authorization:'Bearer '+token}:{})},body:JSON.stringify({...b,...(auth?{version:(await read()).version}:{})})});return {status:r.status,data:await r.json()};}
+assert.equal((await fetch(origin+'/api/store?admin=1')).status,403);
+assert.equal((await post({action:'product',product:{}},false)).status,403);
+const bad=await fetch(origin+'/api/store',{method:'POST',headers:{Origin:'https://untrusted.invalid','Content-Type':'application/json'},body:JSON.stringify({action:'request'})});assert.equal(bad.status,403);
+const id='test-'+Date.now();const p={id,name:'Local QA product',category:'Home care',description:'Local test only',price:10000,discount:10,stock:1,image:'/art/vase.svg',active:true,sample:false};
+assert.equal((await post({action:'product',product:p})).status,200);
+const s=(await read()).data.settings;
+assert.equal((await post({action:'settings',settings:{...s,live:true}})).status,400);
+assert.equal((await post({action:'settings',settings:{...s,delivery:'LOCAL TEST',payment:'LOCAL TEST',returns:'LOCAL TEST',privacy:'LOCAL TEST',shipping:500,live:true}})).status,200);
+const key=crypto.randomUUID(),body={action:'checkout',name:'Local test',phone:'test-'+Date.now(),address:'Local test address only',consent:true,key,items:[{id,qty:1}],expectedTotal:9500};
+assert.equal((await post({...body,expectedTotal:1},false)).status,400);
+const [a,b]=await Promise.all([post(body,false),post({...body,key:crypto.randomUUID(),phone:body.phone+'2'},false)]);assert.deepEqual([a.status,b.status].sort(),[200,400]);
+const success=a.status===200?a:b,successfulBody=a.status===200?body:{...body,phone:body.phone+'2'};
+let state=(await read()).data;assert.equal(state.products.find(p=>p.id===id).stock,0);
+if(a.status===200)assert.equal((await post(body,false)).data.id,success.data.id);
+assert.equal((await post({action:'order',id:success.data.id,status:'Cancelled',paid:false})).status,200);
+assert.equal((await post({action:'order',id:success.data.id,status:'Cancelled',paid:false})).status,200);
+state=(await read()).data;assert.equal(state.products.find(p=>p.id===id).stock,1);
+assert.equal((await post({action:'order',id:success.data.id,status:'New',paid:false})).status,400);
+assert.equal((await post({action:'request',name:'QA',phone:'request-'+Date.now(),message:'Local product request test'},false)).status,200);
+assert.equal((await post({action:'expense',label:'Local test',date:'2026-10-22',amount:100})).status,200);
+assert.equal((await post({action:'promotion',promotion:{id:crypto.randomUUID(),code:'QA'+Date.now(),percent:10,ends:'2099-01-01',active:true}})).status,200);
+const pub=await (await fetch(origin+'/api/store')).json();assert.equal(pub.orders,undefined);assert.equal(pub.requests,undefined);
+await post({action:'settings',settings:{...state.settings,live:false}});
+console.log('PASS: admin authorization, cross-origin denial, launch guard, server prices, concurrent stock safety, duplicate submission, cancellation/restocking, request, expense, promotion and customer-data isolation.');

@@ -1,0 +1,10 @@
+import {readFileSync,writeFileSync} from 'node:fs';
+const [databaseId]=process.argv.slice(2);
+if(!databaseId||!/^[a-f0-9-]{36}$/i.test(databaseId))throw Error('Pass your Cloudflare D1 database UUID.');
+const config=JSON.parse(readFileSync('dist/server/wrangler.json','utf8'));
+config.name='najneen-nest-store';config.workers_dev=true;
+config.d1_databases=[{binding:'DB',database_name:'najneen-nest',database_id:databaseId,migrations_dir:'../../drizzle'}];
+config.vars={...(config.vars||{}),AUTH_MODE:'token'};
+delete config.services;
+writeFileSync('dist/server/wrangler.independent.json',JSON.stringify(config,null,2));
+console.log('Independent hosting config created. Set ADMIN_TOKEN as a Cloudflare secret before deploying.');

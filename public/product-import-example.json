@@ -1,0 +1,14 @@
+[
+  {
+    "id": "replace-with-your-sku",
+    "name": "TO FILL — actual product name",
+    "category": "Home care",
+    "description": "TO FILL — materials, dimensions, colours, care and safety details",
+    "price": 10000,
+    "discount": 0,
+    "stock": 0,
+    "image": "/art/vase.svg",
+    "active": false,
+    "sample": true
+  }
+]
